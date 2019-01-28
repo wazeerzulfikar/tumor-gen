@@ -1,12 +1,20 @@
 import keras.backend as K
 import numpy as np
 
-def GAN_criterion(output, target):
-	return K.mean(K.log(output+K.epsilon())*target + K.log(output+K.epsilon())*(1-target), axis=-1)
+def GAN_criterion(output, target, use_mse=True):
+	if use_mse:
+		diff = output-target
+		dims = list(range(1,K.ndim(diff)))
+		return K.expand_dims((K.mean(diff**2, dims)), 0)
+	else:
+		return K.mean(K.log(output+K.epsilon())*target + K.log(output+K.epsilon())*(1-target), axis=-1)
 
 
 def cycle_criterion(recon, real):
-	return K.mean(K.abs(recon - real), axis=-1)
+	# return K.mean(K.abs(recon - real), axis=-1)
+	diff = K.abs(recon-real)
+	dims = list(range(1,K.ndim(diff)))
+	return K.expand_dims((K.mean(diff, dims)), 0)
 
 
 def G_loss(G_tensors, lambda_val=10):
