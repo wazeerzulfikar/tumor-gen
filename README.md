@@ -1,2 +1,2 @@
 # tumor-gen
-[WIP] CycleGAN to generate meningioma tumours
+[WIP] CycleGAN to generate meningioma tumors
