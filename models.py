@@ -1,7 +1,7 @@
 import tensorflow as tf
 from keras import layers
 from keras.models import Model
-from keras_contrib.layers import InstanceNormalization
+# from keras_contrib.layers import InstanceNormalization
 import keras.backend as K
 import os
 import time
@@ -12,7 +12,7 @@ def batchnorm():
 
 
 def conv_block(x, filters, kernel_size=4, strides=(2,2), padding='same',
-	has_norm_layer=True, use_instance_norm=False, has_activation_layer=True, use_leaky_relu=False,):
+	has_norm_layer=True, use_instance_norm=False, has_activation_layer=True, use_leaky_relu=False):
 
 	x = layers.Conv2D(filters, kernel_size, strides=strides, padding=padding)(x)
 
@@ -31,7 +31,7 @@ def conv_block(x, filters, kernel_size=4, strides=(2,2), padding='same',
 	return x
 
 
-def discriminator(image_size=32,nf=64,n_hidden_layers=2):
+def discriminator(image_size=32,nf=64,n_hidden_layers=3,load_path=None):
 
 	inputs = layers.Input(shape=(image_size,image_size,3))
 
@@ -43,7 +43,12 @@ def discriminator(image_size=32,nf=64,n_hidden_layers=2):
 
 	outputs = layers.Conv2D(1, (4,4), activation='sigmoid')(x)
 
-	return Model(inputs=inputs, outputs=outputs)
+	model = Model(inputs=inputs, outputs=outputs)
+
+	if load_path not None:
+		model.load_weights(load_path)
+
+	return model
 
 
 def res_block(x, filters=256, use_dropout=False):
@@ -70,7 +75,7 @@ def up_block(x, filters, kernel_size, use_conv2d_transpose=True):
 	return x
 
 
-def resnet_generator(image_size=32, n_res_blocks=6):
+def resnet_generator(image_size=32, n_res_blocks=6, load_path=None):
 
 	inputs = layers.Input(shape=(image_size,image_size,3))
 
@@ -86,12 +91,12 @@ def resnet_generator(image_size=32, n_res_blocks=6):
 
 	outputs = layers.Conv2D(3, (7,7), activation='sigmoid', padding='same')(x)
 
-	return Model(inputs=inputs, outputs=outputs), inputs, outputs
+	model = Model(inputs=inputs, outputs=outputs)
+
+	if load_path not None:
+		model.load_weights(load_path)
+
+	return model, inputs, outputs
 
 
 # def unet_generator(image_size=32, ):
-
-
-
-
-
