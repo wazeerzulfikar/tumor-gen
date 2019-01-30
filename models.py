@@ -1,7 +1,7 @@
 import tensorflow as tf
 from keras import layers
 from keras.models import Model
-# from keras_contrib.layers import InstanceNormalization
+from keras_contrib.layers import InstanceNormalization
 import keras.backend as K
 import os
 import time
@@ -45,7 +45,7 @@ def discriminator(image_size=32,nf=64,n_hidden_layers=3,load_path=None):
 
 	model = Model(inputs=inputs, outputs=outputs)
 
-	if load_path not None:
+	if load_path is not None:
 		model.load_weights(load_path)
 
 	return model
@@ -89,11 +89,11 @@ def resnet_generator(image_size=32, n_res_blocks=6, load_path=None):
 	x = up_block(x, 128, 3)
 	x = up_block(x, 256, 3)
 
-	outputs = layers.Conv2D(3, (7,7), activation='sigmoid', padding='same')(x)
+	outputs = layers.Conv2D(3, (7,7), activation='tanh', padding='same')(x)
 
 	model = Model(inputs=inputs, outputs=outputs)
 
-	if load_path not None:
+	if load_path is not None:
 		model.load_weights(load_path)
 
 	return model, inputs, outputs
