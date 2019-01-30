@@ -3,16 +3,25 @@ from models import *
 from losses import *
 import os
 
-image_size = 128
+image_size = 256
 
+load = False
 load_from = 50
 load_path = '/saved_models'
 
-discriminator_A = discriminator(image_size, load_path=os.path.join(load_path, 'discriminator_A_{}.h5'.format(load_from)))
-discriminator_B = discriminator(image_size, load_path=os.path.join(load_path, 'discriminator_B_{}.h5'.format(load_from)))
+if load:
+	discriminator_A = discriminator(image_size, load_path=os.path.join(load_path, 'discriminator_A_{}.h5'.format(load_from)))
+	discriminator_B = discriminator(image_size, load_path=os.path.join(load_path, 'discriminator_B_{}.h5'.format(load_from)))
 
-generator_A2B, real_A, fake_B = resnet_generator(image_size, load_path=os.path.join(load_path, 'generator_A2B_{}.h5'.format(load_from)))
-generator_B2A, real_B, fake_A = resnet_generator(image_size, load_path=os.path.join(load_path, 'generator_B2A_{}.h5'.format(load_from)))
+	generator_A2B, real_A, fake_B = resnet_generator(image_size, load_path=os.path.join(load_path, 'generator_A2B_{}.h5'.format(load_from)))
+	generator_B2A, real_B, fake_A = resnet_generator(image_size, load_path=os.path.join(load_path, 'generator_B2A_{}.h5'.format(load_from)))
+
+else:
+	discriminator_A = discriminator(image_size)
+	discriminator_B = discriminator(image_size)
+
+	generator_A2B, real_A, fake_B = resnet_generator(image_size)
+	generator_B2A, real_B, fake_A = resnet_generator(image_size)
 
 print(discriminator_A.summary())
 print('-'*150)
