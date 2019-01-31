@@ -53,7 +53,7 @@ def save_generator_output(batch_x, generator, epoch='', direction='A2B',path='/o
 	batch_y = denormalize(generated_images)
 
 	output_array = np.vstack([np.hstack((img1, img2)) for img1, img2 in zip(batch_x, batch_y)])
-	output = Image.fromarray(output_batch)
+	output = Image.fromarray(output_array)
 	output.save(os.path.join(path,'generated_{}_{}_{}.jpg').format(direction, image_size, epoch))
 
 
