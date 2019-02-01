@@ -5,8 +5,8 @@ import numpy as np
 import time
 from keras.models import load_model
 
-image_size = 256
-batch_size = 1
+image_size = 128
+batch_size = 4
 n_epochs = 301
 save_step = 50
 
@@ -37,8 +37,8 @@ for epoch in range(0,n_epochs):
 		real_A = next(train_A_generator)
 		real_B = next(train_B_generator)
 
-		fake_A = generator_A2B.predict(real_B)
-		fake_B = generator_B2A.predict(real_A)
+		fake_B = generator_A2B.predict(real_A)
+		fake_A = generator_B2A.predict(real_B)
 
 		generator_trainer.train_on_batch([real_A, real_B], dummy_labels)
 

@@ -21,13 +21,13 @@ def G_loss(G_tensors, lambda_val=10):
 
 	D_A_fake, recon_A, G_A_input, D_B_fake, recon_B, G_B_input = G_tensors
 
-	G_A_loss = GAN_criterion(D_A_fake, K.ones_like(D_A_fake))
+	G_A2B_loss = GAN_criterion(D_B_fake, K.ones_like(D_B_fake))
 	cycle_A_loss = cycle_criterion(recon_A, G_A_input)
 
-	G_B_loss = GAN_criterion(D_B_fake, K.ones_like(D_B_fake))
+	G_B2A_loss = GAN_criterion(D_A_fake, K.ones_like(D_A_fake))
 	cycle_B_loss = cycle_criterion(recon_B, G_B_input)
 
-	loss = G_A_loss + G_B_loss + lambda_val * (cycle_A_loss + cycle_B_loss)
+	loss = G_A2B_loss + G_B2A_loss + lambda_val * (cycle_A_loss + cycle_B_loss)
 
 	return loss
 
