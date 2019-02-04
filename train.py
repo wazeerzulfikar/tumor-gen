@@ -7,14 +7,16 @@ image_size = 256
 
 load = False
 load_from = 50
-load_path = '/saved_models'
+load_path = '/output/saved_models'
 
 if load:
-	discriminator_A = discriminator(image_size, load_path=os.path.join(load_path, 'discriminator_A_{}.h5'.format(load_from)))
-	discriminator_B = discriminator(image_size, load_path=os.path.join(load_path, 'discriminator_B_{}.h5'.format(load_from)))
+	discriminator_A = discriminator(image_size, load_path=os.path.join(load_path, 'discriminator_A_{}_{}.h5'.format(image_size,load_from)))
+	discriminator_B = discriminator(image_size, load_path=os.path.join(load_path, 'discriminator_B_{}_{}.h5'.format(image_size,load_from)))
 
-	generator_A2B, real_A, fake_B = resnet_generator(image_size, load_path=os.path.join(load_path, 'generator_A2B_{}.h5'.format(load_from)))
-	generator_B2A, real_B, fake_A = resnet_generator(image_size, load_path=os.path.join(load_path, 'generator_B2A_{}.h5'.format(load_from)))
+	generator_A2B, real_A, fake_B = resnet_generator(image_size, 
+		load_path=os.path.join(load_path, 'generator_A2B_{}_{}.h5'.format(image_size,load_from)))
+	generator_B2A, real_B, fake_A = resnet_generator(image_size, 
+		load_path=os.path.join(load_path, 'generator_B2A_{}_{}.h5'.format(image_size,load_from)))
 
 else:
 	discriminator_A = discriminator(image_size)
@@ -33,7 +35,7 @@ discriminator_A_fake = discriminator_A(fake_A)
 recon_A = generator_B2A(fake_B)
 discriminator_B_fake = discriminator_B(fake_B)
 
-lambda_layer_inputs = [discriminator_B_fake, recon_A, real_A, discriminator_A_fake, recon_B, real_B]
+lambda_layer_inputs = [discriminator_A_fake, recon_A, real_A, discriminator_B_fake, recon_B, real_B]
 
 for l in generator_A2B.layers:
 	l.trainable=True
