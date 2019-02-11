@@ -47,7 +47,7 @@ def res_block(inputs, filters=32, use_dropout=False, name='res_block'):
 	y = conv_block(inputs, filters, kernel_size=3, strides=1, name=name+'_conv1')
 	if use_dropout:
 		y = tf.layers.dropout(y, 0.5)
-	y = conv_block(y, filters, kernel_size=3, strides=1, name=name+'_conv2')
+	y = conv_block(y, filters, kernel_size=3, strides=1, use_activation_layer=False, name=name+'_conv2')
 
 	return inputs + y
 
