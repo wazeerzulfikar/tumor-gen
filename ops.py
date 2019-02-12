@@ -11,7 +11,7 @@ def instance_norm(inputs, name='instance_norm'):
 		return scale*normalized + offset
 
 
-def conv_block(inputs, filters, kernel_size=4, strides=1, padding='same',
+def conv_block(inputs, filters, kernel_size=4, strides=2, padding='same',
 	has_norm_layer=True, has_activation_layer=True, use_instance_norm=True, use_leaky_relu=False, name='conv_block'):
 
 	with tf.variable_scope(name):
@@ -20,7 +20,7 @@ def conv_block(inputs, filters, kernel_size=4, strides=1, padding='same',
 			filters=filters,
 			kernel_size=[kernel_size,kernel_size],
 			strides=strides,
-			padding=padding,
+			padding=padding
 			)
 
 		if has_norm_layer:
@@ -44,10 +44,10 @@ def conv_block(inputs, filters, kernel_size=4, strides=1, padding='same',
 
 def res_block(inputs, filters=32, use_dropout=False, name='res_block'):
 
-	y = conv_block(inputs, filters, kernel_size=3, strides=1, name=name+'_conv1')
+	y = conv_block(inputs, filters, kernel_size=3, strides=(1,1), name=name+'_conv1')
 	if use_dropout:
 		y = tf.layers.dropout(y, 0.5)
-	y = conv_block(y, filters, kernel_size=3, strides=1, use_activation_layer=False, name=name+'_conv2')
+	y = conv_block(y, filters, kernel_size=3, strides=(1,1), has_activation_layer=False, name=name+'_conv2')
 
 	return inputs + y
 

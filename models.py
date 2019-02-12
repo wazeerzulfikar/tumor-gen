@@ -5,9 +5,9 @@ def resnet_generator(image, n_res_blocks=9, reuse=False, name='generator'):
 
 	with tf.variable_scope(name, reuse=reuse):
 
-		c0 = conv_block(image, 64, 7, (1,1), name='c0')
-		c1 = conv_block(c0, 128, 3, (2,2), name='c1')
-		c2 = conv_block(c1, 256, 3, (2,2), name='c2')
+		c0 = conv_block(image, 64, 7, strides=(1,1), name='c0')
+		c1 = conv_block(c0, 128, 3, strides=(2,2), name='c1')
+		c2 = conv_block(c1, 256, 3, strides=(2,2), name='c2')
 		x = c2
 
 		for i in range(n_res_blocks):
@@ -25,11 +25,11 @@ def discriminator(image, nf=64, n_hidden_layers=3, reuse=False, name='discrimina
 
 	with tf.variable_scope(name, reuse=reuse):
 
-		x = conv_block(image, nf, has_norm_layer=False, use_leaky_relu=True, name='conv')
+		x = conv_block(image, nf, strides=(2,2), has_norm_layer=False, use_leaky_relu=True, name='conv')
 
 		for i in range(n_hidden_layers):
 			n_filters = nf*(2**(i+1))
-			x = conv_block(x, n_filters, use_leaky_relu=True, name='conv'+str(i))
+			x = conv_block(x, n_filters, strides=(2,2), use_leaky_relu=True, name='conv'+str(i))
 
 		out = conv_block(x, 1, strides=(1,1), has_norm_layer=False, has_activation_layer=False, name='output')
 
