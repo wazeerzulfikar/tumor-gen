@@ -45,18 +45,18 @@ if write:
 
 else:
 
-	# recon_images = []
+	recon_images = []
 
-	# record_iterator = tf.python_io.tf_record_iterator(path=tfrecords_filename)
+	record_iterator = tf.python_io.tf_record_iterator(path=tfrecords_filename)
 
-	# for record in record_iterator:
+	for record in record_iterator:
 
-	# 	example = tf.train.Example()
-	# 	example.ParseFromString(record)
+		example = tf.train.Example()
+		example.ParseFromString(record)
 
-	# 	img_string = example.features.feature['image_raw'].bytes_list.value[0]
-	# 	img = np.fromstring(img_string, dtype=np.uint8).reshape((image_size, image_size, 3))
+		img_string = example.features.feature['image_raw'].bytes_list.value[0]
+		img = np.fromstring(img_string, dtype=np.uint8).reshape((image_size, image_size, 3))
 
-	# 	plt.imshow(img)
-	# 	plt.show()
+		plt.imshow(img)
+		plt.show()
 		
