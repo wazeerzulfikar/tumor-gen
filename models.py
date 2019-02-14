@@ -77,7 +77,7 @@ def unet_generator(image, nf=64, reuse=False, name='generator'):
 		d7 = tf.nn.dropout(d7, 0.5)
 		d7 = tf.concat([d7, e1], axis=3)
 
-		out = tf.nn.tanh(tf.layers.conv2d_transpose(d7, 3, 3, 2, name='out'))
+		out = tf.nn.tanh(tf.layers.conv2d_transpose(d7, 3, 3, 2, padding='same', name='out'))
 
 		return out
 
