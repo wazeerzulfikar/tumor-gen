@@ -16,7 +16,7 @@ def discriminator(image, nf=64, n_hidden_layers=3, reuse=False, name='discrimina
 		return out
 
 
-def resnet_generator(image, nf=64, n_res_blocks=9, reuse=False, name='generator'):
+def resnet_generator(image, nf=64, n_res_blocks=9, channels, reuse=False, name='generator'):
 
 	with tf.variable_scope(name, reuse=reuse):
 
@@ -31,12 +31,12 @@ def resnet_generator(image, nf=64, n_res_blocks=9, reuse=False, name='generator'
 		u1 = up_block(x, nf*2, 3, name='up1')
 		u2 = up_block(u1, nf, 3, name='up2')
 
-		out = tf.nn.tanh(tf.layers.conv2d(u2, 3, 7, strides=(1,1), padding='same'))
+		out = tf.nn.tanh(tf.layers.conv2d(u2, channels, 7, strides=(1,1), padding='same'))
 
 		return out
 
 
-def unet_generator(image, nf=64, reuse=False, name='generator'):
+def unet_generator(image, nf=64, channels=3, reuse=False, name='generator'):
 
 	with tf.variable_scope(name, reuse=reuse):
 
@@ -77,7 +77,7 @@ def unet_generator(image, nf=64, reuse=False, name='generator'):
 		d7 = tf.nn.dropout(d7, 0.5)
 		d7 = tf.concat([d7, e1], axis=3)
 
-		out = tf.nn.tanh(tf.layers.conv2d_transpose(d7, 3, 3, 2, padding='same', name='out'))
+		out = tf.nn.tanh(tf.layers.conv2d_transpose(d7, channels, 3, 2, padding='same', name='out'))
 
 		return out
 

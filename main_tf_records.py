@@ -10,8 +10,11 @@ image_size = 256
 batch_size = 1
 channels = 3
 l1_lambda = 10
-n_epochs = 101
+n_epochs = 301
 save_step = 5
+continue_train = False
+checkpoint_dir = '/output/saved_models'
+
 tf_records_filename_trainA = '/data/horse2zebra_trainA.tfrecords'
 tf_records_filename_trainB = '/data/horse2zebra_trainB.tfrecords'
 
@@ -33,11 +36,11 @@ real_data = tf.placeholder(tf.float32, [None, image_size, image_size, channels+c
 real_A = real_data[:,:,:,:channels]
 real_B = real_data[:,:,:,channels:]
 
-fake_B = resnet_generator(real_A, reuse=False, name='generator_A2B')
-fake_A = resnet_generator(real_B, reuse=False, name='generator_B2A')
+fake_B = unet_generator(real_A, channels=channels, reuse=False, name='generator_A2B')
+fake_A = unet_generator(real_B, channels=channels, reuse=False, name='generator_B2A')
 
-recon_B = resnet_generator(fake_A, reuse=True, name='generator_A2B')
-recon_A = resnet_generator(fake_B, reuse=True, name='generator_B2A')
+recon_B = unet_generator(fake_A, channels=channels, reuse=True, name='generator_A2B')
+recon_A = unet_generator(fake_B, channels=channels, reuse=True, name='generator_B2A')
 
 d_predict_fake_A = discriminator(fake_A, reuse=False, name='discriminator_A')
 d_predict_fake_B = discriminator(fake_B, reuse=False, name='discriminator_B')
@@ -88,19 +91,29 @@ testB = load_dataset(os.path.join(dataset_path, 'testB'), image_size)
 
 pool = ImagePool()
 
-trainA = tf.data.TFRecordDataset(tf_records_filename_trainA).map(parse_record)
-trainA = trainA.shuffle(1000).repeat(None).batch(batch_size)
-trainA_iter = trainA.make_one_shot_iterator()
+trainA = tf.data.TFRecordDataset(tf_records_filename_trainA).map(parse_record, num_parallel_calls=4)
+trainA = trainA.shuffle(1000).batch(batch_size)
+trainA_iter = trainA.make_initializable_iterator()
 
-trainB = tf.data.TFRecordDataset(tf_records_filename_trainB).map(parse_record)
-trainB = trainB.shuffle(1000).repeat(None).batch(batch_size)
-trainB_iter = trainB.make_one_shot_iterator()
+trainB = tf.data.TFRecordDataset(tf_records_filename_trainB).map(parse_record, num_parallel_calls=4)
+trainB = trainB.shuffle(1000).batch(batch_size)
+trainB_iter = trainB.make_initializable_iterator()
 
 trainA_next = trainA_iter.get_next()
 trainB_next = trainB_iter.get_next()
 
+if continue_train:
+	ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+	ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
+	saver.restore(sess, os.path.join(checkpoint_dir, ckpt_name))
+
+
 for epoch in range(n_epochs):
 	start = time.time()
+
+	sess.run(trainA_iter.initializer)
+	sess.run(trainB_iter.initializer)
+	# count = 0
 
 	while True:
 
@@ -110,6 +123,9 @@ for epoch in range(n_epochs):
 		except tf.errors.OutOfRangeError:
 			# Epoch is over
 			break
+
+		# print('batch ', count)
+		# count+=1
 
 		if(batch_A.shape[3]!=3 or batch_B.shape[3]!=3):
 			continue
@@ -131,7 +147,7 @@ for epoch in range(n_epochs):
 	if epoch%save_step==0:
 		saver.save(sess, os.path.join('/output/saved_models', 'cyclegan.model'), global_step=epoch)
 		test_idx = np.random.choice(min(len(testA),len(testB)), size=16, replace=False)
-		test_batch = normalize(np.concatenate((testA[test_idx],testB[test_idx]), axis=3))
+		test_batch = norm(np.concatenate((testA[test_idx],testB[test_idx]), axis=3))
 		fake_A_image, fake_B_image = sess.run(
 			[fake_A, fake_B],
 			feed_dict={real_data: test_batch})
