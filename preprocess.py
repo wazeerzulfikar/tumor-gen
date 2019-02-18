@@ -3,60 +3,58 @@ import os
 import random
 import numpy as np
 import glob
-from tqdm import tqdm
+# from tqdm import tqdm
+import nibabel as nib
 from utils import *
 
-write = True
+def _bytes_feature(value):
+	return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
-if write:
+def _int64_feature(value):
+	return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
 
-	image_size = 256
+# image_size = 256
+# dataset = '../sample_datasets/horse2zebra/trainA'
+# filenames = glob.glob(os.path.join(dataset_path, '*.jpg'))
 
-	dataset_path_A = '../sample_datasets/horse2zebra/trainA'
-	dataset_path_B = '../sample_datasets/horse2zebra/trainB'
-	filenames = glob.glob(os.path.join(dataset_path_A, '*.jpg'))+glob.glob(os.path.join(dataset_path_B, '*.jpg'))
-	np.random.shuffle(filenames)
+# tfrecords_filename = 'horse2zebra_trainA.tfrecords'
+# writer = tf.python_io.TFRecordWriter(tfrecords_filename)
 
-	def _bytes_feature(value):
-		return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
-	def _int64_feature(value):
-		return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+# for f in tqdm(filenames):
 
-	tfrecords_filename = 'horse2zebra.tfrecords'
+# 	with tf.gfile.FastGFile(f, 'rb') as fid:
+# 		img_raw = fid.read()
 
-	writer = tf.python_io.TFRecordWriter(tfrecords_filename)
+# 	label = 0 if 'trainA' in f else 1
 
-	for f in tqdm(filenames):
+# 	example = tf.train.Example(features=tf.train.Features(feature={
+# 		'image_size': _int64_feature(image_size),
+# 		'image_raw': _bytes_feature(img_raw),
+# 		'label': _int64_feature(label)
+# 		}))
 
-		img = read_image(f, image_size)
-		img_raw = img.tostring()
-		label = 0 if 'trainA' in f else 1
+# 	writer.write(example.SerializeToString())
 
-		example = tf.train.Example(features=tf.train.Features(feature={
-			'image_size': _int64_feature(image_size),
-			'image_raw': _bytes_feature(img_raw), 
-			'label': _int64_feature(label)
-			}))
+# writer.close()
 
-		writer.write(example.SerializeToString())
+dataset_path = '/data/no-tumor-conformed'
+save_path = '/data/tfrecords/no-tumor.tfrecords'
 
-	writer.close()
+filenames = glob.glob(os.path.join(dataset_path,'*.nii.gz'))
 
-else:
+options = tf.python_io.TFRecordOptions(compression_type=tf.python_io.TFRecordCompressionType.GZIP)
 
-	recon_images = []
+with tf.python_io.TFRecordWriter(save_path, options=options) as writer:
 
-	record_iterator = tf.python_io.tf_record_iterator(path=tfrecords_filename)
-
-	for record in record_iterator:
-
-		example = tf.train.Example()
-		example.ParseFromString(record)
-
-		img_string = example.features.feature['image_raw'].bytes_list.value[0]
-		img = np.fromstring(img_string, dtype=np.uint8).reshape((image_size, image_size, 3))
-
-		plt.imshow(img)
-		plt.show()
-		
+	for e,f in enumerate(filenames):
+		if 'label' in f:
+			continue
+		print(e)
+		img = nib.load(f)
+		img = nib.as_closest_canonical(img).get_fdata(caching='unchanged', dtype=np.float32)
+		feature = {
+			'volume': tf.train.Feature(bytes_list=tf.train.BytesList(value=[img.ravel().tostring()]))
+		}
+		mri_example = tf.train.Example(features=tf.train.Features(feature=feature))
+		writer.write(mri_example.SerializeToString())
