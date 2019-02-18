@@ -7,14 +7,34 @@ import random
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import tensorflow as tf
 
 
 def normalize(img):
+	return tf.divide(tf.subtract(img,tf.constant(127.5)),tf.constant(127.5))
+
+def norm(img):
 	return (img-127.5)/127.5
 
+def z_score_normalize(img):
+	mean, variance = tf.nn.moments(img, axes=[1,2], keep_dims=True)
+	stddev = tf.sqrt(variance)
+	return (img-mean)/stddev
 
 def denormalize(img):
 	return ((img*127.5)+127.5).clip(0,255).astype('uint8')
+
+
+def read_image(path, image_size=32):
+	img = Image.open(path).convert('RGB')
+	img = img.resize((image_size, image_size))
+	return np.array(img)
+
+def read_both_images(path, image_size=32):
+	img_A = normalize(read_image(path[0], image_size))
+	img_B = normalize(read_image(path[1], image_size))
+
+	return np.concatenate((img_A, img_B), axis=2)
 
 
 def load_dataset(path, image_size=32):
@@ -23,9 +43,8 @@ def load_dataset(path, image_size=32):
 	files = glob.glob(os.path.join(path,'*.jpg'))
 
 	for f in files:
-		img = Image.open(f).convert('RGB')
-		img = img.resize((image_size, image_size))
-		img = np.array(img)
+
+		img = read_image(f, image_size)
 
 		if np.random.randint(0,2):
 			img = np.fliplr(img)
@@ -96,10 +115,31 @@ class ImagePool(object):
 			return images
 
 
-# import nibabel as nib
-# def read_mri(file_path):
-# 	mri = nib.load(file_path)
-# 	data = mr.get_data()
-# 	mri.uncache()
-# 	return data
+def parse_record(data_record):
+
+	features = {
+		'image_size': tf.FixedLenFeature([], tf.int64),
+		'image_raw': tf.FixedLenFeature([], tf.string),
+		'label': tf.FixedLenFeature([], tf.int64)
+	}
+
+	sample = tf.parse_single_example(data_record, features)
+
+	image = tf.cast(tf.image.decode_image(sample['image_raw']), tf.float32)
+	image = normalize(image)
+	label = tf.cast(sample['label'], tf.int32)
+
+	return (image, label)
+
+
+def parse_mri_record(record):
+    features = {
+        'volume': tf.FixedLenFeature([], tf.string),
+    }
+    example = tf.parse_single_example(record, features=features)
+    img = tf.io.decode_raw(example['volume'], tf.float32)
+    print(img.shape)
+    volume = tf.cast(tf.reshape(img, shape=(256, 256, 256)), tf.uint8)
+    return volume
+
 
