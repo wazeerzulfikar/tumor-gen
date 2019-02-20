@@ -53,13 +53,13 @@ def res_block(inputs, filters=32, use_dropout=False, name='res_block'):
 		return inputs + y
 
 
-def up_block(inputs, filters, kernel_size=3, use_conv2d_transpose=True, use_instance_norm=True, name='conv2d_transpose'):
+def up_block(inputs, filters, kernel_size=3, strides=2, use_conv2d_transpose=True, use_instance_norm=True, name='conv2d_transpose'):
 	with tf.variable_scope(name):
 		x = tf.layers.conv2d_transpose(
 			inputs=inputs,
 			filters=filters,
 			kernel_size=[kernel_size, kernel_size], 
-			strides=(2,2),
+			strides=(strides,strides),
 			padding='same',
 			kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
 
