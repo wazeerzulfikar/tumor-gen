@@ -16,7 +16,7 @@ def discriminator(image, nf=64, n_hidden_layers=3, reuse=False, name='discrimina
 		return out
 
 
-def resnet_generator(image, nf=64, n_res_blocks=9, channels, reuse=False, name='generator'):
+def resnet_generator(image, nf=64, n_res_blocks=9, channels=3, reuse=False, name='generator'):
 
 	with tf.variable_scope(name, reuse=reuse):
 
