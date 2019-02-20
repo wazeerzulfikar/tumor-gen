@@ -6,17 +6,25 @@ from models import *
 from losses import *
 from utils import *
 
+import argparse
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('--train', default=True, type=bool, help='Train or test')
+args = parser.parse_args()
+
 image_size = 256
 batch_size = 1
-channels = 3
+channels = 256
 l1_lambda = 10
 n_epochs = 301
 save_step = 5
 continue_train = False
+train = args.train
 checkpoint_dir = '/output/saved_models'
 
-tf_records_filename_trainA = '/data/horse2zebra_trainA.tfrecords'
-tf_records_filename_trainB = '/data/horse2zebra_trainB.tfrecords'
+tf_records_filename_trainA = '/data/tfrecords/no-tumor.tfrecords'
+tf_records_filename_trainB = '/data/tfrecords/tumor.tfrecords'
 
 tfconfig = tf.ConfigProto(allow_soft_placement=True)
 tfconfig.gpu_options.allow_growth=True
@@ -36,11 +44,11 @@ real_data = tf.placeholder(tf.float32, [None, image_size, image_size, channels+c
 real_A = real_data[:,:,:,:channels]
 real_B = real_data[:,:,:,channels:]
 
-fake_B = unet_generator(real_A, channels=channels, reuse=False, name='generator_A2B')
-fake_A = unet_generator(real_B, channels=channels, reuse=False, name='generator_B2A')
+fake_B = resnet_generator(real_A, channels=channels, reuse=False, name='generator_A2B')
+fake_A = resnet_generator(real_B, channels=channels, reuse=False, name='generator_B2A')
 
-recon_B = unet_generator(fake_A, channels=channels, reuse=True, name='generator_A2B')
-recon_A = unet_generator(fake_B, channels=channels, reuse=True, name='generator_B2A')
+recon_B = resnet_generator(fake_A, channels=channels, reuse=True, name='generator_A2B')
+recon_A = resnet_generator(fake_B, channels=channels, reuse=True, name='generator_B2A')
 
 d_predict_fake_A = discriminator(fake_A, reuse=False, name='discriminator_A')
 d_predict_fake_B = discriminator(fake_B, reuse=False, name='discriminator_B')
@@ -86,73 +94,109 @@ saver = tf.train.Saver()
 
 writer = tf.summary.FileWriter('/output/logs', sess.graph)
 
-testA = load_dataset(os.path.join(dataset_path, 'testA'), image_size)
-testB = load_dataset(os.path.join(dataset_path, 'testB'), image_size)
-
 pool = ImagePool()
 
-trainA = tf.data.TFRecordDataset(tf_records_filename_trainA).map(parse_record, num_parallel_calls=4)
-trainA = trainA.shuffle(1000).batch(batch_size)
+trainA = tf.data.TFRecordDataset(tf_records_filename_trainA, compression_type='GZIP').map(parse_mri_record, num_parallel_calls=4)
+trainA = trainA.shuffle(1).batch(batch_size)
 trainA_iter = trainA.make_initializable_iterator()
 
-trainB = tf.data.TFRecordDataset(tf_records_filename_trainB).map(parse_record, num_parallel_calls=4)
-trainB = trainB.shuffle(1000).batch(batch_size)
+trainB = tf.data.TFRecordDataset(tf_records_filename_trainB, compression_type='GZIP').map(parse_mri_record, num_parallel_calls=4)
+trainB = trainB.shuffle(1).batch(batch_size)
 trainB_iter = trainB.make_initializable_iterator()
 
 trainA_next = trainA_iter.get_next()
 trainB_next = trainB_iter.get_next()
 
-if continue_train:
+if train:
+
+	if continue_train:
+		ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+		ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
+		saver.restore(sess, os.path.join(checkpoint_dir, ckpt_name))
+
+
+	for epoch in range(n_epochs):
+		start = time.time()
+
+		sess.run(trainA_iter.initializer)
+		sess.run(trainB_iter.initializer)
+		# count = 0
+
+		while True:
+
+			try:
+				batch_A = sess.run(trainA_next)
+				batch_B = sess.run(trainB_next)
+			except tf.errors.OutOfRangeError:
+				# Epoch is over
+				break
+
+			# print('batch ', count)
+			# count+=1
+
+			# if(batch_A.shape[3]!=3 or batch_B.shape[3]!=3):
+			# 	continue
+			batch_A_B = np.concatenate((batch_A, batch_B), axis=3)
+
+			fake_A_image, fake_B_image , _ = sess.run(
+				[fake_A, fake_B, g_optimizer],
+				feed_dict={real_data: batch_A_B})
+
+			[fake_A_image, fake_B_image] = pool([fake_A_image, fake_B_image])
+
+			_ = sess.run(
+				[d_optimizer],
+				feed_dict={real_data: batch_A_B, fake_A_sample: fake_A_image, fake_B_sample: fake_B_image})
+
+		print('Epoch {}, time taken {}'.format(epoch, time.time()-start))
+
+		if epoch%save_step==0:
+			saver.save(sess, os.path.join('/output/saved_models', 'cyclegan.model'), global_step=epoch)
+			# test_idx = np.random.choice(min(len(testA),len(testB)), size=16, replace=False)
+			# test_batch = norm(np.concatenate((testA[test_idx],testB[test_idx]), axis=3))
+			# fake_A_image, fake_B_image = sess.run(
+			# 	[fake_A, fake_B],
+			# 	feed_dict={real_data: test_batch})
+			# save_generator_output(test_batch[:,:,:,:channels], fake_B_image, epoch=epoch, direction='A2B')
+			# save_generator_output(test_batch[:,:,:,channels:], fake_A_image, epoch=epoch, direction='B2A')
+
+			# save_generator_output(batch_A_B[:,:,:,:channels], fake_B_image, epoch=epoch, direction='A2B')
+			# save_generator_output(batch_A_B[:,:,:,channels:], fake_A_image, epoch=epoch, direction='B2A')
+
+else:
+
 	ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
 	ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
+
+	print('model at {} loaded'.format(ckpt_name))
+
 	saver.restore(sess, os.path.join(checkpoint_dir, ckpt_name))
 
+	test_A = tf.placeholder(tf.float32, [None, image_size, image_size, channels], name='test_A')
+	test_B = tf.placeholder(tf.float32, [None, image_size, image_size, channels], name='test_B')
 
-for epoch in range(n_epochs):
-	start = time.time()
+	output_test_B = resnet_generator(test_A, channels=channels, reuse=True, name='generator_A2B')
+	output_test_A = resnet_generator(test_B, channels=channels, reuse=True, name='generator_B2A')
 
 	sess.run(trainA_iter.initializer)
 	sess.run(trainB_iter.initializer)
-	# count = 0
 
-	while True:
+	for i in range(5):
+		batch_A = sess.run(trainA_next)
+		batch_B = sess.run(trainB_next)
 
-		try:
-			batch_A = sess.run(trainA_next)[0]
-			batch_B = sess.run(trainB_next)[0]
-		except tf.errors.OutOfRangeError:
-			# Epoch is over
-			break
+		fake_B_image = sess.run(output_test_B, feed_dict={test_A: batch_A})
+		fake_A_image = sess.run(output_test_A, feed_dict={test_B: batch_B})
 
-		# print('batch ', count)
-		# count+=1
+		save_mri_image(batch_A[0], '/output/generated/{}_real_A.nii.gz'.format(i))
+		save_mri_image(fake_B_image[0], '/output/generated/{}_fake_B_image.nii.gz'.format(i))
 
-		if(batch_A.shape[3]!=3 or batch_B.shape[3]!=3):
-			continue
+		save_mri_image(batch_B[0], '/output/generated/{}_real_B.nii.gz'.format(i))
+		save_mri_image(fake_A_image[0], '/output/generated/{}_fake_A_image.nii.gz'.format(i))
 
-		batch_A_B = np.concatenate((batch_A, batch_B), axis=3)
+		print(i,' Done')
 
-		fake_A_image, fake_B_image , _ = sess.run(
-			[fake_A, fake_B, g_optimizer],
-			feed_dict={real_data: batch_A_B})
 
-		[fake_A_image, fake_B_image] = pool([fake_A_image, fake_B_image])
-
-		_ = sess.run(
-			[d_optimizer],
-			feed_dict={real_data: batch_A_B, fake_A_sample: fake_A_image, fake_B_sample: fake_B_image})
-
-	print('Epoch {}, time taken {}'.format(epoch, time.time()-start))
-
-	if epoch%save_step==0:
-		saver.save(sess, os.path.join('/output/saved_models', 'cyclegan.model'), global_step=epoch)
-		test_idx = np.random.choice(min(len(testA),len(testB)), size=16, replace=False)
-		test_batch = norm(np.concatenate((testA[test_idx],testB[test_idx]), axis=3))
-		fake_A_image, fake_B_image = sess.run(
-			[fake_A, fake_B],
-			feed_dict={real_data: test_batch})
-		save_generator_output(test_batch[:,:,:,:channels], fake_B_image, epoch=epoch, direction='A2B')
-		save_generator_output(test_batch[:,:,:,channels:], fake_A_image, epoch=epoch, direction='B2A')
 
 
 
