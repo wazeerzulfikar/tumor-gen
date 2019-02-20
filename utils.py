@@ -8,6 +8,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import tensorflow as tf
+import nibabel as nib
 
 
 def normalize(img):
@@ -133,13 +134,21 @@ def parse_record(data_record):
 
 
 def parse_mri_record(record):
+
     features = {
         'volume': tf.FixedLenFeature([], tf.string),
     }
     example = tf.parse_single_example(record, features=features)
     img = tf.io.decode_raw(example['volume'], tf.float32)
-    print(img.shape)
-    volume = tf.cast(tf.reshape(img, shape=(256, 256, 256)), tf.uint8)
+    img = normalize(img)
+    volume = tf.reshape(img, shape=(256, 256, 256))
     return volume
+
+
+def save_mri_image(img_array, filename):
+
+	denormalized_img_array = denormalize(img_array)
+	mri = nib.Nifti1Image(denormalized_img_array, np.eye(4))
+	nib.save(mri, filename)
 
 
