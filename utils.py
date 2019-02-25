@@ -133,7 +133,7 @@ def parse_record(data_record):
 	return (image, label)
 
 
-def parse_mri_record(record):
+def parse_mri_record(record, only_slice=True):
 
     features = {
         'volume': tf.FixedLenFeature([], tf.string),
@@ -142,7 +142,9 @@ def parse_mri_record(record):
     img = tf.io.decode_raw(example['volume'], tf.float32)
     img = normalize(img)
     volume = tf.reshape(img, shape=(256, 256, 256))
-    return volume
+    if not only_slice:
+    	return volume
+    return tf.expand_dims(volume[128,:,:],2)
 
 
 def save_mri_image(img_array, filename):
