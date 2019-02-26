@@ -15,69 +15,66 @@ print(args.test)
 image_size = 256
 channels = 1
 z_dim = 100
-batch_size = 4
+batch_size = 32
 n_epochs = 301
 save_step = 10
 gan_criterion = mse_criterion
 test = args.test
-checkpoint_dir = '/output/saved_models'
+load_model_path = '/output/saved_models'
+load_epoch = 100
+tensorboard = tf.keras.callbacks.TensorBoard(log_dir='/output/logs')
 
 sess = tf.Session()
 
-def create_generator(z, z_dim=100, channels=3, reuse=False, name='generator'):
+def create_generator(input_shape, out_channels=3, name='generator'):
 
-	with tf.variable_scope(name, reuse=reuse):
+	inputs = tf.keras.layers.Input(shape=input_shape)
 
-		project = tf.layers.dense(z, 16*16*128)
+	project = tf.keras.layers.Dense(16*16*64)(inputs)
 
-		h = tf.reshape(project, [-1, 16, 16, 128])
+	h = tf.keras.layers.Reshape((16, 16, 64))(project)
 
-		h0 = up_block(h, 64, 3, strides=2, name='h0')
-		h1 = up_block(h0, 32, 3, strides=2, name='h1')
-		h2 = up_block(h1, 16, 3, strides=2, name='h2')
-		# h3 = up_block(h2, 16, 3, strides=2, name='h3')
-		out = tf.nn.tanh(tf.layers.conv2d_transpose(h2, channels, 3, strides=(2,2), padding='same'))
+	h0 = up_block(h, 32, 3, strides=2)
+	h1 = up_block(h0, 16, 3, strides=2)
+	h2 = up_block(h1, 8, 3, strides=2)
+	# h3 = up_block(h2, 8, 3, strides=2)
+	pred = tf.keras.layers.Conv2DTranspose(out_channels, 3, strides=(2,2), padding='same', activation='tanh')(h2)
 
-		return out
+	return tf.keras.models.Model(inputs=[inputs], outputs=[pred], name=name)
 
+z_input_shape = (z_dim,)
+img_input_shape = (image_size, image_size, channels)
 
-z = tf.placeholder(tf.float32, [None, z_dim], name='z')
-fake = tf.placeholder(tf.float32, [None, image_size, image_size, channels], name='fake')
-real = tf.placeholder(tf.float32, [None, image_size, image_size, channels], name='real')
+z = tf.keras.layers.Input(shape=z_input_shape, name='z')
 
-g_image = create_generator(z, z_dim=z_dim, channels=channels, reuse=False, name='generator')
+generator = create_generator(z_input_shape, out_channels=channels, name='generator')
+discriminator = create_discriminator(img_input_shape, nf=32, name='discriminator')
 
-d_pred_real = discriminator(real, reuse=False, name='discriminator')
-d_pred_generator = discriminator(g_image, reuse=True, name='discriminator')
-d_pred_fake = discriminator(fake, reuse=True, name='discriminator')
+adam = tf.keras.optimizers.Adam(lr=2e-4, beta_1=0.5, beta_2=0.999)
 
-d_real_loss = gan_criterion(d_pred_real, tf.ones_like(d_pred_real))
-d_fake_loss = gan_criterion(d_pred_fake, tf.zeros_like(d_pred_fake))
+discriminator.compile(optimizer=adam, loss=gan_criterion)
 
-d_loss = d_fake_loss + d_real_loss
+frozen_discriminator = tf.keras.models.Model(discriminator.inputs, discriminator.outputs)
+frozen_discriminator.trainable = False
 
-g_loss = gan_criterion(d_pred_generator, tf.ones_like(d_pred_generator))
+fake_image = generator(z)
+d_pred = frozen_discriminator(fake_image)
 
-d_vars = [var for var in tf.trainable_variables() if 'discriminator' in var.name]
-g_vars = [var for var in tf.trainable_variables() if 'generator' in var.name]
-
-print(len(d_vars))
-print(len(g_vars))
-
-d_optim = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5, beta2=0.999).minimize(d_loss, var_list=d_vars)
-g_optim = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5, beta2=0.999).minimize(g_loss, var_list=g_vars)
+combined = tf.keras.models.Model(inputs=[z], outputs=[d_pred])
+combined.compile(optimizer=adam, loss=gan_criterion)
 
 tfrecords_filename = '/data/tfrecords/tumor.tfrecords'
 
 dset = tf.data.TFRecordDataset(tfrecords_filename, compression_type='GZIP').map(parse_mri_record, num_parallel_calls=batch_size)
-dset = dset.shuffle(1).batch(batch_size)
+dset = dset.batch(batch_size)
 dset_iter = dset.make_initializable_iterator()
 dset_next = dset_iter.get_next()
 
-saver = tf.train.Saver()
-
 init_op = tf.global_variables_initializer()
 sess.run(init_op)
+
+print(discriminator.summary())
+print(generator.summary())
 
 if not test:
 
@@ -85,46 +82,54 @@ if not test:
 
 		print('Epoch ',e)
 		start = time.time()
+		count = 0
 
 		sess.run(dset_iter.initializer)
 
 		while True:
+
+			print(count)
+			count+=1
+
 			try:
 				batch_real = sess.run(dset_next)
 			except tf.errors.OutOfRangeError:
 				break
 
+			if len(batch_real)!=batch_size:
+				break
+
 			batch_z = np.random.uniform(-1, 1, size=(batch_size , z_dim))
 
-			_, fake_image = sess.run([g_optim, g_image], feed_dict={z: batch_z})
-
-			sess.run(d_optim, feed_dict={real: batch_real, fake: fake_image})
+			fakes = generator.predict(batch_z)
+			label_shape = [batch_size]+list(discriminator.output_shape[1:])
+			labels = tf.concat([tf.ones(label_shape), tf.zeros(label_shape)],axis=0)
+			discriminator.train_on_batch(x=tf.concat([batch_real, fakes],axis=0), y=labels)
+			combined.train_on_batch(x=batch_z, y=tf.ones(label_shape))
 
 		print(time.time()-start)
 
 		if e%save_step==0:
-			saver.save(sess, os.path.join('/output/saved_models', 'cyclegan.model'), global_step=e)
+			discriminator.save(os.path.join('/output/saved_models', 'discriminator_{}.h5'.format(e)))
+			generator.save(os.path.join('/output/saved_models', 'generator_{}.h5'.format(e)))
 
+			for i in range(10):
+				batch_test = np.random.uniform(-1, 1, size=(batch_size , z_dim))
+
+				fake = generator.predict(batch_test)
+
+				img = Image.fromarray(denormalize(fake[0]).reshape((256,256)))
+				img.save('/output/generated/{}.jpg'.format(i))
 else:
 
-	ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
-	ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
+	latest_model = sorted(glob.glob(os.path.join(load_model_path, 'generator*')), key=lambda x: int(x.split('_')[-1]))[-1]
 
-	print('model at {} loaded'.format(ckpt_name))
-
-	saver.restore(sess, os.path.join(checkpoint_dir, ckpt_name))
-
-	test = tf.placeholder(tf.float32, [None, z_dim], name='test')
-
-	g_image = create_generator(test, z_dim=z_dim, channels=channels, reuse=True, name='generator')
+	generator.load_weights(os.path.join(load_model_path, latest_model))
 
 	for i in range(10):
 		batch_x = np.random.uniform(-1, 1, size=(batch_size , z_dim))
 
-		fake = sess.run(g_image, feed_dict={test: batch_x})
+		fake = generator.predict(batch_x)
 
 		img = Image.fromarray(denormalize(fake[0]).reshape((256,256)))
 		img.save('/output/generated/{}.jpg'.format(i))
-
-		# save_mri_image(fake[0], '/output/generated/{}.nii.gz'.format(i))
-
