@@ -1,78 +1,79 @@
 import tensorflow as tf 
 
-def instance_norm(inputs, name='instance_norm'):
-	with tf.variable_scope(name):
-		depth = inputs.get_shape()[3]
-		scale = tf.get_variable('scale', [depth], initializer=tf.random_normal_initializer(1.0,0.02,dtype=tf.float32))
-		offset = tf.get_variable('offset', [depth], initializer=tf.constant_initializer(0.0))
+class InstanceNormalization(tf.keras.layers.Layer):
+	def __init__(self):
+		super(InstanceNormalization, self).__init__()
+
+	def build(self, input_shape):
+		depth = int(input_shape[-1])
+		self.scale = self.add_variable('scale', shape=[depth], initializer=tf.random_normal_initializer(1.0,0.02,dtype=tf.float32))
+		self.offset = self.add_variable('offset', shape=[depth], initializer=tf.constant_initializer(0.0))
+
+	def call(self, inputs):
 		mean, variance = tf.nn.moments(inputs, axes=[1,2], keep_dims=True)
-		inv = tf.rsqrt(variance+1e-5)
+		inv = tf.rsqrt(variance)
 		normalized = (inputs-mean)*inv
-		return scale*normalized + offset
+		return self.scale*normalized + self.offset
 
 
 def conv_block(inputs, filters, kernel_size=4, strides=(2,2), padding='same',
-	has_norm_layer=True, has_activation_layer=True, use_instance_norm=True, use_leaky_relu=False, name='conv_block'):
+	has_norm_layer=True, has_activation_layer=True, use_instance_norm=True, use_leaky_relu=False):
 
-	with tf.variable_scope(name):
-		x = tf.layers.conv2d(
-			inputs=inputs,
-			filters=filters,
-			kernel_size=[kernel_size,kernel_size],
-			strides=strides,
-			padding=padding,
-			kernel_initializer=tf.truncated_normal_initializer(stddev=0.02)
-			)
+	x = tf.keras.layers.Conv2D(
+		filters=filters,
+		kernel_size=kernel_size,
+		strides=strides,
+		padding=padding,
+		kernel_initializer=tf.truncated_normal_initializer(stddev=0.02)
+		)(inputs)
 
-		if has_norm_layer:
-			if use_instance_norm:
-				x = instance_norm(x)
-				# x = tf.contrib.instance_norm(x)
-			else:
-				x = tf.layers.batch_normalization(
-					x,
-					momemtum=0.9,
-					epsilon=1e-5)
+	if has_norm_layer:
+		if use_instance_norm:
+			x = InstanceNormalization()(x)
+		else:
+			x = tf.keras.layers.BatchNormalization(
+				momemtum=0.9,
+				epsilon=1e-5
+				)(x)
 
-		if has_activation_layer:
-			if use_leaky_relu:
-				x = tf.nn.leaky_relu(x, alpha=0.3)
-			else:
-				x = tf.nn.relu(x)
+	if has_activation_layer:
+		if use_leaky_relu:
+			x = tf.keras.layers.LeakyReLU(alpha=0.3)(x)
+		else:
+			x = tf.keras.layers.ReLU()(x)
 
 		return x
 
 
-def res_block(inputs, filters=32, use_dropout=False, name='res_block'):
-	with tf.variable_scope(name):
-		y = conv_block(inputs, filters, kernel_size=3, strides=(1,1), name='conv1')
-		if use_dropout:
-			y = tf.layers.dropout(y, 0.5)
-		y = conv_block(y, filters, kernel_size=3, strides=(1,1), has_activation_layer=False, name='conv2')
+def res_block(inputs, filters=32, use_dropout=False):
 
-		return inputs + y
+	y = conv_block(inputs, filters, kernel_size=3, strides=(1,1))
+	if use_dropout:
+		y = tf.keras.layers.Dropout(0.5)(y)
+	y = conv_block(y, filters, kernel_size=3, strides=(1,1), has_activation_layer=False)
+
+	return tf.keras.layers.Add()([inputs, y])
 
 
-def up_block(inputs, filters, kernel_size=3, strides=2, use_conv2d_transpose=True, use_instance_norm=True, name='conv2d_transpose'):
-	with tf.variable_scope(name):
-		x = tf.layers.conv2d_transpose(
-			inputs=inputs,
-			filters=filters,
-			kernel_size=[kernel_size, kernel_size], 
-			strides=(strides,strides),
-			padding='same',
-			kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
+def up_block(inputs, filters, kernel_size=3, strides=2, use_conv2d_transpose=True, use_instance_norm=True):
 
-		if use_instance_norm:
-			x = instance_norm(x)
-			# x = tf.contrib.instance_norm(x)
-		else:		
-			x = tf.layers.batch_normalization(
-						x,
-						momemtum=0.9,
-						epsilon=1e-5)
+	x = tf.keras.layers.Conv2DTranspose(
+		filters=filters,
+		kernel_size=kernel_size, 
+		strides=(strides,strides),
+		padding='same',
+		kernel_initializer=tf.truncated_normal_initializer(stddev=0.02)
+		)(inputs)
 
-		x = tf.nn.relu(x)
+	if use_instance_norm:
+			x = InstanceNormalization()(x)
+	else:
+		x = tf.keras.layers.BatchNormalization(
+			momemtum=0.9,
+			epsilon=1e-5
+			)(x)
+
+	x = tf.keras.layers.ReLU()(x)
 
 	return x
 
