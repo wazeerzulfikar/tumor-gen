@@ -42,7 +42,7 @@ def conv_block(inputs, filters, kernel_size=4, strides=(2,2), padding='same',
 		else:
 			x = tf.keras.layers.ReLU()(x)
 
-		return x
+	return x
 
 
 def res_block(inputs, filters=32, use_dropout=False):
