@@ -10,17 +10,19 @@ import argparse
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--train', default=True, type=bool, help='Train or test')
+parser.add_argument('--test', action='store_true', help='Run test script')
 args = parser.parse_args()
+
+print(args.test)
 
 image_size = 256
 batch_size = 1
-channels = 256
+channels = 1
 l1_lambda = 10
 n_epochs = 301
 save_step = 5
 continue_train = False
-train = args.train
+test = args.test
 checkpoint_dir = '/output/saved_models'
 
 tf_records_filename_trainA = '/data/tfrecords/no-tumor.tfrecords'
@@ -37,92 +39,85 @@ if use_lsgan:
 else:
 	gan_criterion = cross_entropy_criterion
 
-dataset_path = '/data/horse2zebra'
+adam = tf.keras.optimizers.Adam(lr=2e-4, beta_1=0.5, beta_2=0.999)
 
-real_data = tf.placeholder(tf.float32, [None, image_size, image_size, channels+channels],name='real_A_B')
+img_input_shape = (image_size, image_size, channels)
 
-real_A = real_data[:,:,:,:channels]
-real_B = real_data[:,:,:,channels:]
+discriminator_A = create_discriminator(img_input_shape, nf=32, name='discriminator_A')
+discriminator_B = create_discriminator(img_input_shape, nf=32, name='discriminator_B')
 
-fake_B = resnet_generator(real_A, channels=channels, reuse=False, name='generator_A2B')
-fake_A = resnet_generator(real_B, channels=channels, reuse=False, name='generator_B2A')
+generator_A2B = resnet_generator(img_input_shape, channels=channels, name='generator_A2B')
+generator_B2A = resnet_generator(img_input_shape, channels=channels, name='generator_B2A')
 
-recon_B = resnet_generator(fake_A, channels=channels, reuse=True, name='generator_A2B')
-recon_A = resnet_generator(fake_B, channels=channels, reuse=True, name='generator_B2A')
+# Discriminator Stuff
 
-d_predict_fake_A = discriminator(fake_A, reuse=False, name='discriminator_A')
-d_predict_fake_B = discriminator(fake_B, reuse=False, name='discriminator_B')
+discriminator_A.compile(optimizer=adam, loss=gan_criterion)
+discriminator_B.compile(optimizer=adam, loss=gan_criterion)
 
-cycle_loss = abs_criterion(recon_A, real_A) + abs_criterion(recon_B, real_B)
+# Generator Stuff
 
-g_a2b_loss = gan_criterion(d_predict_fake_B, tf.ones_like(d_predict_fake_B)) + l1_lambda * cycle_loss
-g_b2a_loss = gan_criterion(d_predict_fake_A, tf.ones_like(d_predict_fake_A)) + l1_lambda * cycle_loss
-g_loss = g_a2b_loss + g_b2a_loss - (l1_lambda*cycle_loss)
+real_A = tf.keras.layers.Input(shape=img_input_shape, name='real_A')
+real_B = tf.keras.layers.Input(shape=img_input_shape, name='real_B')
 
-d_predict_real_A = discriminator(real_A, reuse=True, name='discriminator_A')
-d_predict_real_B = discriminator(real_B, reuse=True, name='discriminator_B')
+fake_B = generator_A2B(real_A)
+fake_A = generator_B2A(real_B)
 
-fake_A_sample = tf.placeholder(tf.float32, [None, image_size, image_size, channels], name='fake_A_sample')
-fake_B_sample = tf.placeholder(tf.float32, [None, image_size, image_size, channels], name='fake_B_sample')
+recon_B = generator_A2B(fake_A)
+recon_A = generator_B2A(fake_B)
 
-d_predict_fake_A_sample = discriminator(fake_A_sample, reuse=True, name='discriminator_A')
-d_predict_fake_B_sample = discriminator(fake_A_sample, reuse=True, name='discriminator_B')
+frozen_discriminator_A = tf.keras.models.Model(inputs=discriminator_A.inputs, outputs=discriminator_A.outputs)
+frozen_discriminator_A.trainable = False
 
-d_a_labels = tf.concat([tf.ones_like(d_predict_real_A), tf.zeros_like(d_predict_fake_A_sample)], axis=-1)
-d_a_loss = gan_criterion(tf.concat([d_predict_real_A, d_predict_fake_A_sample], axis=-1), d_a_labels)
+frozen_discriminator_B = tf.keras.models.Model(inputs=discriminator_B.inputs, outputs=discriminator_B.outputs)
+frozen_discriminator_B.trainable = False
 
-d_b_labels = tf.concat([tf.ones_like(d_predict_real_B), tf.zeros_like(d_predict_fake_B_sample)], axis=-1)
-d_b_loss = gan_criterion(tf.concat([d_predict_real_B, d_predict_fake_B_sample], axis=-1), d_b_labels)
+pred_A = frozen_discriminator_A(fake_A)
+pred_B = frozen_discriminator_B(fake_B)
 
-d_loss = d_a_loss + d_b_loss
+reconstructions = tf.keras.layers.Concatenate(axis=0, name='reconstructions')([recon_A, recon_B])
+d_predictions = tf.keras.layers.Concatenate(axis=0, name='d_predictions')([pred_A, pred_B])
 
-d_vars = [var for var in tf.trainable_variables() if 'discriminator' in var.name]
-g_vars = [var for var in tf.trainable_variables() if 'generator' in var.name]
+generator_trainer = tf.keras.models.Model(inputs=[real_A, real_B], outputs=[reconstructions, d_predictions])
 
-print(len(d_vars))
-print(len(g_vars))
+losses = {
+	'reconstructions' : cycle_loss,
+	'd_predictions' : gan_criterion
+}
 
-### train
+loss_weights = {
+	'reconstructions' : 10.0,
+	'd_predictions' : 1.0
+}
 
-d_optimizer = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5, beta2=0.999).minimize(d_loss, var_list=d_vars)
-g_optimizer = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5, beta2=0.999).minimize(g_loss, var_list=g_vars)
-
-init_op = tf.global_variables_initializer()
-
-sess.run(init_op)
-saver = tf.train.Saver()
-
-writer = tf.summary.FileWriter('/output/logs', sess.graph)
+generator_trainer.compile(optimizer=adam, loss=losses, loss_weights=loss_weights)
 
 pool = ImagePool()
 
-trainA = tf.data.TFRecordDataset(tf_records_filename_trainA, compression_type='GZIP').map(parse_mri_record, num_parallel_calls=4)
-trainA = trainA.shuffle(1).batch(batch_size)
+trainA = tf.data.TFRecordDataset(tf_records_filename_trainA, compression_type='GZIP').map(parse_mri_record, num_parallel_calls=batch_size)
+trainA = trainA.batch(batch_size)
 trainA_iter = trainA.make_initializable_iterator()
 
-trainB = tf.data.TFRecordDataset(tf_records_filename_trainB, compression_type='GZIP').map(parse_mri_record, num_parallel_calls=4)
-trainB = trainB.shuffle(1).batch(batch_size)
+trainB = tf.data.TFRecordDataset(tf_records_filename_trainB, compression_type='GZIP').map(parse_mri_record, num_parallel_calls=batch_size)
+trainB = trainB.batch(batch_size)
 trainB_iter = trainB.make_initializable_iterator()
 
 trainA_next = trainA_iter.get_next()
 trainB_next = trainB_iter.get_next()
 
-if train:
-
-	if continue_train:
-		ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
-		ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
-		saver.restore(sess, os.path.join(checkpoint_dir, ckpt_name))
-
+if not test:
 
 	for epoch in range(n_epochs):
 		start = time.time()
 
 		sess.run(trainA_iter.initializer)
 		sess.run(trainB_iter.initializer)
-		# count = 0
+		count = 0
 
 		while True:
+
+			count +=1
+			print(count)
+			print(time.time()-start)
 
 			try:
 				batch_A = sess.run(trainA_next)
@@ -131,22 +126,25 @@ if train:
 				# Epoch is over
 				break
 
-			# print('batch ', count)
-			# count+=1
-
-			# if(batch_A.shape[3]!=3 or batch_B.shape[3]!=3):
-			# 	continue
-			batch_A_B = np.concatenate((batch_A, batch_B), axis=3)
-
-			fake_A_image, fake_B_image , _ = sess.run(
-				[fake_A, fake_B, g_optimizer],
-				feed_dict={real_data: batch_A_B})
+			fake_A_image = generator_A2B.predict(batch_A)
+			fake_B_image = generator_B2A.predict(batch_B)
+			print('predict', time.time()-start)
 
 			[fake_A_image, fake_B_image] = pool([fake_A_image, fake_B_image])
 
-			_ = sess.run(
-				[d_optimizer],
-				feed_dict={real_data: batch_A_B, fake_A_sample: fake_A_image, fake_B_sample: fake_B_image})
+			label_shape = [batch_size]+list(discriminator_A.output_shape[1:])
+			labels = tf.concat([tf.ones(label_shape), tf.zeros(label_shape)],axis=0)
+
+			d_A_loss = discriminator_A.train_on_batch(x=tf.concat([batch_A, fake_A_image], axis=0), y=labels)
+			d_B_loss = discriminator_B.train_on_batch(x=tf.concat([batch_B, fake_B_image], axis=0), y=labels)
+
+			print('d A loss ', d_A_loss)
+			print('d B loss ', d_B_loss)
+
+			g_loss = generator_trainer.train_on_batch(x=[batch_A, batch_B], 
+				y=[tf.concat([batch_A, batch_B], axis=0), tf.concat([tf.ones(label_shape), tf.ones(label_shape)], axis=0)])
+
+			print('g loss ', g_loss)
 
 		print('Epoch {}, time taken {}'.format(epoch, time.time()-start))
 
