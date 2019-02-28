@@ -15,7 +15,7 @@ print(args.test)
 image_size = 256
 channels = 1
 z_dim = 100
-batch_size = 32
+batch_size = 4
 n_epochs = 301
 save_step = 10
 gan_criterion = mse_criterion
@@ -30,13 +30,13 @@ def create_generator(input_shape, out_channels=3, name='generator'):
 
 	inputs = tf.keras.layers.Input(shape=input_shape)
 
-	project = tf.keras.layers.Dense(16*16*64)(inputs)
+	project = tf.keras.layers.Dense(16*16*128)(inputs)
 
-	h = tf.keras.layers.Reshape((16, 16, 64))(project)
+	h = tf.keras.layers.Reshape((16, 16, 128))(project)
 
-	h0 = up_block(h, 32, 3, strides=2)
-	h1 = up_block(h0, 16, 3, strides=2)
-	h2 = up_block(h1, 8, 3, strides=2)
+	h0 = up_block(h, 64, 3, strides=2)
+	h1 = up_block(h0, 32, 3, strides=2)
+	h2 = up_block(h1, 16, 3, strides=2)
 	# h3 = up_block(h2, 8, 3, strides=2)
 	pred = tf.keras.layers.Conv2DTranspose(out_channels, 3, strides=(2,2), padding='same', activation='tanh')(h2)
 
@@ -53,6 +53,9 @@ discriminator = create_discriminator(img_input_shape, nf=32, name='discriminator
 adam = tf.keras.optimizers.Adam(lr=2e-4, beta_1=0.5, beta_2=0.999)
 
 discriminator.compile(optimizer=adam, loss=gan_criterion)
+
+n_disc_trainable = len(discriminator.trainable_weights)
+n_gen_trainable = len(generator.trainable_weights)
 
 frozen_discriminator = tf.keras.models.Model(discriminator.inputs, discriminator.outputs)
 frozen_discriminator.trainable = False
@@ -76,6 +79,8 @@ sess.run(init_op)
 print(discriminator.summary())
 print(generator.summary())
 
+print()
+
 if not test:
 
 	for e in range(n_epochs):
@@ -88,9 +93,6 @@ if not test:
 
 		while True:
 
-			print(count)
-			count+=1
-
 			try:
 				batch_real = sess.run(dset_next)
 			except tf.errors.OutOfRangeError:
@@ -99,13 +101,27 @@ if not test:
 			if len(batch_real)!=batch_size:
 				break
 
-			batch_z = np.random.uniform(-1, 1, size=(batch_size , z_dim))
+			batch_z = np.random.normal(0, 1, size=(batch_size , z_dim))
 
-			fakes = generator.predict(batch_z)
 			label_shape = [batch_size]+list(discriminator.output_shape[1:])
 			labels = tf.concat([tf.ones(label_shape), tf.zeros(label_shape)],axis=0)
-			discriminator.train_on_batch(x=tf.concat([batch_real, fakes],axis=0), y=labels)
-			combined.train_on_batch(x=batch_z, y=tf.ones(label_shape))
+
+			if count%1==0:
+				fakes = generator.predict(batch_z)
+				d_loss = discriminator.train_on_batch(x=tf.concat([batch_real, fakes],axis=0), y=labels)
+				print('d loss ', d_loss)
+
+			g_loss = combined.train_on_batch(x=batch_z, y=tf.ones(label_shape))
+
+			print('g loss', g_loss)
+
+			for i in range(10):
+				batch_test = np.random.normal(0, 1, size=(batch_size , z_dim))
+
+				fake = generator.predict(batch_test)
+
+				img = Image.fromarray(denormalize(fake[0]).reshape((256,256)))
+				img.save('/output/generated/{}.jpg'.format(i))
 
 		print(time.time()-start)
 
@@ -113,16 +129,10 @@ if not test:
 			discriminator.save(os.path.join('/output/saved_models', 'discriminator_{}.h5'.format(e)))
 			generator.save(os.path.join('/output/saved_models', 'generator_{}.h5'.format(e)))
 
-			for i in range(10):
-				batch_test = np.random.uniform(-1, 1, size=(batch_size , z_dim))
-
-				fake = generator.predict(batch_test)
-
-				img = Image.fromarray(denormalize(fake[0]).reshape((256,256)))
-				img.save('/output/generated/{}.jpg'.format(i))
+			
 else:
 
-	latest_model = sorted(glob.glob(os.path.join(load_model_path, 'generator*')), key=lambda x: int(x.split('_')[-1]))[-1]
+	latest_model = sorted(glob.glob(os.path.join(load_model_path, 'generator*')), key=lambda x: int(x.replace('.h5','').split('_')[-1]))[-1]
 
 	generator.load_weights(os.path.join(load_model_path, latest_model))
 
@@ -132,4 +142,4 @@ else:
 		fake = generator.predict(batch_x)
 
 		img = Image.fromarray(denormalize(fake[0]).reshape((256,256)))
-		img.save('/output/generated/{}.jpg'.format(i))
+		img.save('/output/generated/a_{}.jpg'.format(i))
