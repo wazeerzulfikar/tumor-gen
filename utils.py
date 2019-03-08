@@ -9,6 +9,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import nibabel as nib
+import copy
 
 
 def normalize(img):
@@ -89,31 +90,28 @@ def batch_generator(data, batch_size=16):
 
 
 class ImagePool(object):
+    def __init__(self, maxsize=50):
+        self.maxsize = maxsize
+        self.num_img = 0
+        self.images = []
 
-	def __init__(self, max_size=50):
-
-		self.max_size = max_size
-		self.num_images = 0
-		self.images = []
-
-
-	def __call__(self, images):
-
-		if self.num_images<self.max_size:
-			self.images.append(images)
-			self.num_images +=1
-			return images
-
-		if np.random.rand()<0.5:
-			idx0 = np.random.randint(self.max_size)
-			idx1 = np.random.randint(self.max_size)
-			tmp1 = self.images[idx0][0]
-			tmp2 = self.images[idx1][1]
-			self.images[idx0][0] = images[0]
-			self.images[idx1][1] = images[1]
-			return [tmp1, tmp2]
-		else:
-			return images
+    def __call__(self, image):
+        if self.maxsize <= 0:
+            return image
+        if self.num_img < self.maxsize:
+            self.images.append(image)
+            self.num_img += 1
+            return image
+        if np.random.rand() > 0.5:
+            idx = int(np.random.rand()*self.maxsize)
+            tmp1 = copy.copy(self.images[idx])[0]
+            self.images[idx][0] = image[0]
+            idx = int(np.random.rand()*self.maxsize)
+            tmp2 = copy.copy(self.images[idx])[1]
+            self.images[idx][1] = image[1]
+            return [tmp1, tmp2]
+        else:
+            return image
 
 
 def parse_record(data_record):
@@ -126,11 +124,12 @@ def parse_record(data_record):
 
 	sample = tf.parse_single_example(data_record, features)
 
-	image = tf.cast(tf.image.decode_image(sample['image_raw']), tf.float32)
+	image = tf.cast(tf.io.decode_raw(sample['image_raw'], tf.uint8), tf.float32)
 	image = normalize(image)
+	image = tf.reshape(image, shape=(256,256,3))
 	label = tf.cast(sample['label'], tf.int32)
 
-	return (image, label)
+	return image
 
 
 def parse_mri_record(record, only_slice=True):
@@ -143,7 +142,7 @@ def parse_mri_record(record, only_slice=True):
     img = normalize(img)
     volume = tf.reshape(img, shape=(256, 256, 256))
     if not only_slice:
-    	return volume
+    	return tf.expand_dims(volume,3)
     return tf.expand_dims(volume[128,:,:],2)
 
 
