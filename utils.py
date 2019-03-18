@@ -132,7 +132,28 @@ def parse_record(data_record):
 	return image
 
 
-def parse_mri_record(record, only_slice=True):
+def parse_mri_record(record, only_slice=True, axis=0, image_size=128):
+
+    features = {
+        'volume': tf.FixedLenFeature([], tf.string),
+    }
+    example = tf.parse_single_example(record, features=features)
+    img = tf.io.decode_raw(example['volume'], tf.float32)
+    img = normalize(img)
+    volume = tf.reshape(img, shape=(image_size, image_size, image_size))
+    if not only_slice:
+    	return tf.expand_dims(volume,3)
+    slice_index = image_size//2
+    if axis==0:
+    	return_slice = volume[slice_index, :, :]
+    if axis==1:
+    	return_slice = volume[:, slice_index, :]
+    if axis==2:
+    	return_slice = volume[:, :, slice_index]
+    return tf.expand_dims(return_slice, 2)
+
+
+def parse_mri_random_slice(record, only_slice=True, axis=2):
 
     features = {
         'volume': tf.FixedLenFeature([], tf.string),
@@ -143,7 +164,26 @@ def parse_mri_record(record, only_slice=True):
     volume = tf.reshape(img, shape=(256, 256, 256))
     if not only_slice:
     	return tf.expand_dims(volume,3)
-    return tf.expand_dims(volume[128,:,:],2)
+    slice_index = int(np.random.uniform(96, 192))
+    if axis==0:
+    	return_slice = volume[slice_index, :, :]
+    if axis==1:
+    	return_slice = volume[:, slice_index, :]
+    if axis==2:
+    	return_slice = volume[:, :, slice_index]
+    return tf.expand_dims(return_slice, 2)
+
+
+def parse_mri_slice(record):
+
+    features = {
+        'slice': tf.FixedLenFeature([], tf.string),
+    }
+    example = tf.parse_single_example(record, features=features)
+    img = tf.io.decode_raw(example['slice'], tf.float32)
+    img = normalize(img)
+    img = tf.reshape(img, shape=(256,256))
+    return tf.expand_dims(img, 2)
 
 
 def save_mri_image(img_array, filename):
