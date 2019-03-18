@@ -10,8 +10,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--test', action='store_true', help='Run test script')
 args = parser.parse_args()
 
-print(args.test)
-
 image_size = 128
 channels = 1
 z_dim = 1024
@@ -113,67 +111,51 @@ learning_phase = tf.keras.backend.learning_phase()
 # discriminator.load_weights(os.path.join('/output', 'discriminator.h5'))
 # generator.load_weights(os.path.join('/output', 'generator.h5'))
 
-if not test:
 
-	for e in range(n_epochs):
+for e in range(n_epochs):
 
-		start = time.time()
-		count = 0
+	start = time.time()
+	count = 0
 
-		sess.run(dset_iter.initializer)
+	sess.run(dset_iter.initializer)
 
-		losses_total = [0, 0]
+	losses_total = [0, 0]
 
-		while True:
-			# print(count)
-			# print(time.time()-start)
+	while True:
+		# print(count)
+		# print(time.time()-start)
 
-			count+=1
+		count+=1
 
-			try:
-				batch_real = sess.run(dset_next)
-			except tf.errors.OutOfRangeError:
-				break
+		try:
+			batch_real = sess.run(dset_next)
+		except tf.errors.OutOfRangeError:
+			break
 
-			if len(batch_real)!=batch_size:
-				break
+		if len(batch_real)!=batch_size:
+			break
 
-			batch_z = np.random.uniform(-1, 1, size=(batch_size , z_dim))
+		batch_z = np.random.uniform(-1, 1, size=(batch_size , z_dim))
 
-			_, loss_ = sess.run([train_step, losses], 
-				feed_dict={z: batch_z, real: batch_real, learning_phase: True})
-			losses_total[0]+=loss_[0]
-			losses_total[1]+=loss_[1]
+		_, loss_ = sess.run([train_step, losses], 
+			feed_dict={z: batch_z, real: batch_real, learning_phase: True})
+		losses_total[0]+=loss_[0]
+		losses_total[1]+=loss_[1]
 
-		print(time.time()-start)
-		losses_total = [i/count for i in losses_total]
-		print('Epoch {} : g loss {}, d loss {}'.format(e, losses_total[0], losses_total[1]))
-
-		for i in range(10):
-			batch_test = np.random.uniform(-1, 1, size=(batch_size , z_dim))
-			fake_image = sess.run(fake, feed_dict={z: batch_test, learning_phase: False})
-			# print(fake_image.shape)
-
-			save_mri_image(fake_image[0],'/output/generated/{}.nii.gz'.format(i))
-
-		discriminator.save(os.path.join('/output', 'discriminator.h5'))
-		generator.save(os.path.join('/output', 'generator.h5'))
-
-		with open('/output/logs.txt','a+') as f:
-			f.write('Epoch {} : g loss {}, d loss {} \n'.format(e, losses_total[0], losses_total[1]))
-			
-
-			
-else:
-
-	latest_model = sorted(glob.glob(os.path.join(load_model_path, 'generator*')), key=lambda x: int(x.replace('.h5','').split('_')[-1]))[-1]
-
-	generator.load_weights(os.path.join(load_model_path, latest_model))
+	print(time.time()-start)
+	losses_total = [i/count for i in losses_total]
+	print('Epoch {} : g loss {}, d loss {}'.format(e, losses_total[0], losses_total[1]))
 
 	for i in range(10):
-		batch_x = np.random.uniform(-1, 1, size=(batch_size , z_dim))
+		batch_test = np.random.uniform(-1, 1, size=(batch_size , z_dim))
+		fake_image = sess.run(fake, feed_dict={z: batch_test, learning_phase: False})
+		# print(fake_image.shape)
 
-		fake = generator.predict(batch_x)
+		save_mri_image(fake_image[0],'/output/generated/{}.nii.gz'.format(i))
 
-		img = Image.fromarray(denormalize(fake[0]).reshape((256,256)))
-		img.save('/output/generated/a_{}.jpg'.format(i))
+	discriminator.save(os.path.join('/output', 'discriminator.h5'))
+	generator.save(os.path.join('/output', 'generator.h5'))
+
+	with open('/output/logs.txt','a+') as f:
+		f.write('Epoch {} : g loss {}, d loss {} \n'.format(e, losses_total[0], losses_total[1]))
+			
