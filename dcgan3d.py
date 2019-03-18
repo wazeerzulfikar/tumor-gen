@@ -12,10 +12,10 @@ args = parser.parse_args()
 
 print(args.test)
 
-image_size = 256
+image_size = 128
 channels = 1
-z_dim = 2048
-batch_size = 2
+z_dim = 1024
+batch_size = 1
 n_epochs = 101
 save_step = 5
 gan_criterion = mse_criterion
@@ -25,100 +25,28 @@ load_epoch = 100
 tensorboard = tf.keras.callbacks.TensorBoard(log_dir='/output/logs')
 
 sess = tf.keras.backend.get_session()
-	
-class InstanceNormalization3D(tf.keras.layers.Layer):
-	def __init__(self):
-		super(InstanceNormalization3D, self).__init__()
 
-	def build(self, input_shape):
-		depth = int(input_shape[-1])
-		self.scale = self.add_variable('scale', shape=[depth], initializer=tf.random_normal_initializer(1.0,0.02,dtype=tf.float32))
-		self.offset = self.add_variable('offset', shape=[depth], initializer=tf.constant_initializer(0.0))
+def create_generator3d(inputs, out_channels=3, name='generator'):
 
-	def call(self, inputs):
-		mean, variance = tf.nn.moments(inputs, axes=[1,2,3], keep_dims=True)
-		inv = tf.rsqrt(variance)
-		normalized = (inputs-mean)*inv
-		return self.scale*normalized + self.offset
+	project = tf.keras.layers.Dense(16*16*16*64, activation='relu')(inputs)
 
+	x = tf.keras.layers.Reshape((16, 16, 16, 64))(project)
 
-def conv_block3d(inputs, filters, kernel_size=4, strides=(2,2,2), padding='same',
-	has_norm_layer=True, has_activation_layer=True, use_instance_norm=False, use_leaky_relu=False):
-
-	x = tf.keras.layers.Conv3D(
-		filters=filters,
-		kernel_size=kernel_size,
-		strides=strides,
-		padding=padding,
-		kernel_initializer=tf.truncated_normal_initializer(stddev=0.02)
-		)(inputs)
-
-	if has_norm_layer:
-		if use_instance_norm:
-			x = InstanceNormalization3D()(x)
-		else:
-			x = tf.keras.layers.BatchNormalization(
-				momentum=0.9,
-				epsilon=1e-5
-				)(x)
-
-	if has_activation_layer:
-		if use_leaky_relu:
-			x = tf.keras.layers.LeakyReLU(alpha=0.3)(x)
-		else:
-			x = tf.keras.layers.ReLU()(x)
-
-	return x
-
-
-def up_block3d(inputs, filters, kernel_size=3, strides=2, use_conv2d_transpose=True, use_instance_norm=False):
-
-	x = tf.keras.layers.Conv3DTranspose(
-		filters=filters,
-		kernel_size=kernel_size, 
-		strides=(strides,strides,strides),
-		padding='same',
-		kernel_initializer=tf.truncated_normal_initializer(stddev=0.02)
-		)(inputs)
-
-	if use_instance_norm:
-			x = InstanceNormalization3D()(x)
-	else:
-		x = tf.keras.layers.BatchNormalization(
-			momentum=0.9,
-			epsilon=1e-5
-			)(x)
-
-	x = tf.keras.layers.ReLU()(x)
-
-	return x
-
-def create_generator3d(input_shape, out_channels=3, name='generator'):
-
-	inputs = tf.keras.layers.Input(shape=input_shape)
-
-	project = tf.keras.layers.Dense(4*4*4*128)(inputs)
-
-	h = tf.keras.layers.Reshape((4, 4, 4, 128))(project)
-
-	h0 = up_block3d(h, 64, 5, strides=4)
-	h1 = up_block3d(h0, 32, 5, strides=2)
-	h2 = up_block3d(h1, 16, 5, strides=2)
-	h3 = up_block3d(h2, 8, 5, strides=2)
-	pred = tf.keras.layers.Conv3DTranspose(out_channels, 5, strides=(2,2,2), padding='same', activation='tanh')(h3)
+	x = up_block(x, 32, 5, n_dims=3, strides=2)
+	x = up_block(x, 16, 5, n_dims=3, strides=2)
+	x = up_block(x, 8, 5, n_dims=3, strides=2)
+	pred = tf.keras.layers.Conv3D(out_channels, 3, strides=1, padding='same', activation='tanh')(x)
 
 	return tf.keras.models.Model(inputs=[inputs], outputs=[pred], name=name)
 
 
-def create_discriminator3d(img_shape, nf=64, n_hidden_layers=3, reuse=False, name='discriminator'):
+def create_discriminator3d(inputs, nf=64, n_hidden_layers=3, reuse=False, name='discriminator'):
 
-	inputs = tf.keras.layers.Input(shape=img_shape)
-
-	x = conv_block3d(inputs, nf, strides=(2,2,2), has_norm_layer=False, use_leaky_relu=True)
+	x = conv_block(inputs, nf, strides=(2,2,2), n_dims=3, has_norm_layer=False, use_leaky_relu=True)
 
 	for i in range(n_hidden_layers):
 		n_filters = nf*(2**(i+1))
-		x = conv_block3d(x, n_filters, strides=(2,2,2), use_leaky_relu=True)
+		x = conv_block(x, n_filters, strides=(2,2,2), n_dims=3, use_leaky_relu=True)
 
 	pred = tf.keras.layers.Conv3D(1, 3, strides=(1,1,1), padding='same', activation='sigmoid')(x)
 
@@ -131,8 +59,8 @@ img_input_shape = (image_size, image_size, image_size, channels)
 z = tf.keras.layers.Input(shape=z_input_shape, name='z')
 real = tf.keras.layers.Input(shape=img_input_shape, name='real')
 
-generator = create_generator3d(z_input_shape, out_channels=channels, name='generator')
-discriminator = create_discriminator3d(img_input_shape, nf=32, name='discriminator')
+generator = create_generator3d(z, out_channels=channels, name='generator')
+discriminator = create_discriminator3d(real, nf=32, name='discriminator')
 
 fake = generator(z)
 d_pred_fake = discriminator(fake)
@@ -142,7 +70,7 @@ d_loss = gan_criterion(tf.concat([tf.ones_like(d_pred_real), tf.zeros_like(d_pre
 g_loss = gan_criterion(tf.ones_like(d_pred_fake), d_pred_fake)
 
 d_optimizer = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5, beta2=0.999).minimize(d_loss, var_list=discriminator.trainable_variables)
-g_optimizer = tf.train.AdamOptimizer(learning_rate=2e-3, beta1=0.5, beta2=0.999).minimize(g_loss, var_list=generator.trainable_variables)
+g_optimizer = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5, beta2=0.999).minimize(g_loss, var_list=generator.trainable_variables)
 
 # d_grad = d_optimizer.compute_gradients(d_loss, discriminator.trainable_weights)
 # g_grad = g_optimizer.compute_gradients(g_loss, generator.trainable_weights)
@@ -165,9 +93,9 @@ def get_internal_updates(model):
 other_parameter_updates = [get_internal_updates(m) for m in [generator, discriminator]]
 
 train_step = [g_optimizer, d_optimizer]
-losses = [d_loss, g_loss]
+losses = [g_loss, d_loss]
 
-tfrecords_filename = '/data/tfrecords/tumor.tfrecords'
+tfrecords_filename = '/data/tfrecords/no-tumor-128.tfrecords'
 
 dset = tf.data.TFRecordDataset(tfrecords_filename, compression_type='GZIP').map(lambda x: parse_mri_record(x, only_slice=False), num_parallel_calls=batch_size)
 dset = dset.shuffle(100).batch(batch_size)
@@ -182,18 +110,24 @@ print(generator.summary())
 
 learning_phase = tf.keras.backend.learning_phase()
 
+# discriminator.load_weights(os.path.join('/output', 'discriminator.h5'))
+# generator.load_weights(os.path.join('/output', 'generator.h5'))
+
 if not test:
 
 	for e in range(n_epochs):
 
-		print('Epoch ',e)
 		start = time.time()
 		count = 0
 
 		sess.run(dset_iter.initializer)
 
+		losses_total = [0, 0]
+
 		while True:
 			# print(count)
+			# print(time.time()-start)
+
 			count+=1
 
 			try:
@@ -208,9 +142,12 @@ if not test:
 
 			_, loss_ = sess.run([train_step, losses], 
 				feed_dict={z: batch_z, real: batch_real, learning_phase: True})
-			# print(loss_)
+			losses_total[0]+=loss_[0]
+			losses_total[1]+=loss_[1]
 
 		print(time.time()-start)
+		losses_total = [i/count for i in losses_total]
+		print('Epoch {} : g loss {}, d loss {}'.format(e, losses_total[0], losses_total[1]))
 
 		for i in range(10):
 			batch_test = np.random.uniform(-1, 1, size=(batch_size , z_dim))
@@ -219,10 +156,12 @@ if not test:
 
 			save_mri_image(fake_image[0],'/output/generated/{}.nii.gz'.format(i))
 
+		discriminator.save(os.path.join('/output', 'discriminator.h5'))
+		generator.save(os.path.join('/output', 'generator.h5'))
 
-		if e%save_step==0:
-			discriminator.save(os.path.join('/output/saved_models', 'discriminator_{}.h5'.format(e)))
-			generator.save(os.path.join('/output/saved_models', 'generator_{}.h5'.format(e)))
+		with open('/output/logs.txt','a+') as f:
+			f.write('Epoch {} : g loss {}, d loss {} \n'.format(e, losses_total[0], losses_total[1]))
+			
 
 			
 else:

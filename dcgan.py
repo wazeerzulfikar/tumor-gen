@@ -14,7 +14,7 @@ print(args.test)
 
 image_size = 256
 channels = 1
-z_dim = 256
+z_dim = 512
 batch_size = 16
 n_epochs = 301
 save_step = 20
@@ -26,19 +26,23 @@ tensorboard = tf.keras.callbacks.TensorBoard(log_dir='/output/logs')
 
 sess = tf.keras.backend.get_session()
 
-def create_generator(input_shape, out_channels=3, name='generator'):
+def create_generator(inputs, out_channels=3, name='generator'):
 
-	inputs = tf.keras.layers.Input(shape=input_shape)
+	# inputs = tf.keras.layers.Input(shape=input_shape)
 
-	project = tf.keras.layers.Dense(8*8*256, activation='tanh')(inputs)
+	project = tf.keras.layers.Dense(8*8*512)(inputs)
 
-	h = tf.keras.layers.Reshape((8, 8, 256))(project)
+	h = tf.keras.layers.Reshape((8, 8, 512))(project)
+	h = tf.keras.layers.BatchNormalization()(h)
+	h = tf.keras.layers.ReLU()(h)
 
-	h0 = up_block(h, 128, 5, strides=2)
-	h1 = up_block(h0, 64, 5, strides=2)
-	h2 = up_block(h1, 32, 5, strides=2)
-	h3 = up_block(h2, 16, 5, strides=2)
-	pred = tf.keras.layers.Conv2DTranspose(out_channels, 5, strides=(2,2), padding='same', activation='tanh')(h3)
+	h0 = up_block(h, 256, 4, strides=2)
+	h1 = up_block(h0, 128, 4, strides=2)
+	# x = SelfAttention(128)(h1)
+	h2 = up_block(h1, 64, 4, strides=2)
+	h3 = up_block(h2, 32, 4, strides=2)
+	h4 = up_block(h3, 16, 4, strides=2)
+	pred = tf.keras.layers.Conv2D(out_channels, 3, strides=(1,1), padding='same', activation='tanh')(h4)
 
 	return tf.keras.models.Model(inputs=[inputs], outputs=[pred], name=name)
 
@@ -48,13 +52,13 @@ img_input_shape = (image_size, image_size, channels)
 z = tf.keras.layers.Input(shape=z_input_shape, name='z')
 real = tf.keras.layers.Input(shape=img_input_shape, name='real')
 
-generator = create_generator(z_input_shape, out_channels=channels, name='generator')
-discriminator = create_discriminator(img_input_shape, nf=32, name='discriminator')
+generator = create_generator(z, out_channels=channels, name='generator')
+discriminator = create_discriminator(real, nf=64, n_hidden_layers=3, name='discriminator')
 
 # combined = tf.keras.models.Model(generator.inputs, discriminator.outputs)
-combined = tf.keras.models.Sequential()
-combined.add(generator)
-combined.add(discriminator)
+# combined = tf.keras.models.Sequential()
+# combined.add(generator)
+# combined.add(discriminator)
 
 fake = generator(z)
 d_pred_fake = discriminator(fake)
@@ -63,20 +67,20 @@ d_pred_real = discriminator(real)
 
 d_loss = gan_criterion(tf.concat([tf.ones_like(d_pred_real), tf.zeros_like(d_pred_fake)],0), tf.concat([d_pred_real, d_pred_fake],0))
 g_loss = gan_criterion(tf.ones_like(d_pred_fake), d_pred_fake)
+# d_loss = tf.reduce_mean(tf.nn.relu(1. - d_pred_real)) + tf.reduce_mean(tf.nn.relu(1. + d_pred_fake))
+# g_loss = - tf.reduce_mean(d_pred_fake)
 
 d_optimizer = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5, beta2=0.999).minimize(d_loss, var_list=discriminator.trainable_variables)
-g_optimizer = tf.train.AdamOptimizer(learning_rate=4e-4, beta1=0.5, beta2=0.999).minimize(g_loss, var_list=generator.trainable_variables)
+g_optimizer = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5, beta2=0.999).minimize(g_loss, var_list=generator.trainable_variables)
 
 # d_grad = d_optimizer.compute_gradients(d_loss, discriminator.trainable_weights)
 # g_grad = g_optimizer.compute_gradients(g_loss, generator.trainable_weights)
 # d_update = d_optimizer.apply_gradients(d_grad)
 # g_update = g_optimizer.apply_gradients(g_grad)
 
-print(len(discriminator.trainable_variables))
-print(len(generator.trainable_variables))
+# print(discriminator.trainable_variables)
 # print(generator.trainable_variables)
 print('='*100)
-# print(discriminator.trainable_variables)
 
 def get_internal_updates(model):
     # get all internal update ops (like moving averages) of a model
@@ -89,7 +93,7 @@ def get_internal_updates(model):
 
 other_parameter_updates = [get_internal_updates(m) for m in [generator, discriminator]]
 
-train_step = [g_optimizer, d_optimizer]
+train_step = [g_optimizer, d_optimizer, other_parameter_updates]
 losses = [d_loss, g_loss]
 
 tfrecords_filename = '/data/tfrecords/tumor.tfrecords'
@@ -104,7 +108,6 @@ sess.run(init_op)
 
 print(discriminator.summary())
 print(generator.summary())
-generator.compile(loss='mae',optimizer='adam')
 
 x_batch = np.random.normal(0, 1, size=(batch_size , z_dim))
 learning_phase = tf.keras.backend.learning_phase()
@@ -155,7 +158,7 @@ if not test:
 			# break
 
 
-		# print(loss_)
+		print(loss_)
 		# fake = generator.predict(x_batch)
 		# print('-'*100)
 		# print(fake[0])
@@ -174,8 +177,8 @@ if not test:
 
 
 		if e%save_step==0:
-			discriminator.save(os.path.join('/output/saved_models', 'discriminator_{}.h5'.format(e)))
-			generator.save(os.path.join('/output/saved_models', 'generator_{}.h5'.format(e)))
+			discriminator.save_weights(os.path.join('/output/saved_models', 'discriminator_{}.h5'.format(e)))
+			generator.save_weights(os.path.join('/output/saved_models', 'generator_{}.h5'.format(e)))
 
 			
 else:
