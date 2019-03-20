@@ -26,7 +26,7 @@ load = True
 pool = ImagePool()
 
 tf_records_filename_trainA = '/data/tfrecords/no-tumor.tfrecords'
-tf_records_filename_trainB = '/data/tfrecords/tumor-slices-axial.tfrecords'
+tf_records_filename_trainB = '/data/tfrecords/tumor.tfrecords'
 
 sess = tf.keras.backend.get_session()
 

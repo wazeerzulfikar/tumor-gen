@@ -10,11 +10,11 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--test', action='store_true', help='Run test script')
 args = parser.parse_args()
 
-image_size = 128
+image_size = 64
 channels = 1
-z_dim = 1024
+z_dim = 8192
 batch_size = 1
-n_epochs = 101
+n_epochs = 51
 save_step = 5
 gan_criterion = mse_criterion
 test = args.test
@@ -26,13 +26,18 @@ sess = tf.keras.backend.get_session()
 
 def create_generator3d(inputs, out_channels=3, name='generator'):
 
-	project = tf.keras.layers.Dense(16*16*16*64, activation='relu')(inputs)
+	# project = tf.keras.layers.Dense(16*16*16*64, activation='relu')(inputs)
+	# project = tf.keras.layers.BatchNormalization()(project)
+	# project = tf.keras.layers.ReLU()(project)
 
-	x = tf.keras.layers.Reshape((16, 16, 16, 64))(project)
+	x = tf.keras.layers.Reshape((8, 8, 8, 16))(reshape)
 
-	x = up_block(x, 32, 5, n_dims=3, strides=2)
+	x = up_block(x, 16, 5, n_dims=3, strides=1)
 	x = up_block(x, 16, 5, n_dims=3, strides=2)
+	x = up_block(x, 8, 5, n_dims=3, strides=1)
 	x = up_block(x, 8, 5, n_dims=3, strides=2)
+	x = up_block(x, 4, 5, n_dims=3, strides=1)
+	x = up_block(x, 4, 5, n_dims=3, strides=2)
 	pred = tf.keras.layers.Conv3D(out_channels, 3, strides=1, padding='same', activation='tanh')(x)
 
 	return tf.keras.models.Model(inputs=[inputs], outputs=[pred], name=name)
@@ -58,7 +63,7 @@ z = tf.keras.layers.Input(shape=z_input_shape, name='z')
 real = tf.keras.layers.Input(shape=img_input_shape, name='real')
 
 generator = create_generator3d(z, out_channels=channels, name='generator')
-discriminator = create_discriminator3d(real, nf=32, name='discriminator')
+discriminator = create_discriminator3d(real, nf=32, n_hidden_layers=2, name='discriminator')
 
 fake = generator(z)
 d_pred_fake = discriminator(fake)
@@ -90,12 +95,13 @@ def get_internal_updates(model):
 
 other_parameter_updates = [get_internal_updates(m) for m in [generator, discriminator]]
 
-train_step = [g_optimizer, d_optimizer]
+# train_step = [g_optimizer, d_optimizer]
+train_step = [g_optimizer]
 losses = [g_loss, d_loss]
 
-tfrecords_filename = '/data/tfrecords/no-tumor-128.tfrecords'
+tfrecords_filename = '/data/tfrecords/no-tumor-64.tfrecords'
 
-dset = tf.data.TFRecordDataset(tfrecords_filename, compression_type='GZIP').map(lambda x: parse_mri_record(x, only_slice=False), num_parallel_calls=batch_size)
+dset = tf.data.TFRecordDataset(tfrecords_filename, compression_type='GZIP').map(lambda x: parse_mri_record(x, only_slice=False, image_size=image_size), num_parallel_calls=batch_size)
 dset = dset.shuffle(100).batch(batch_size)
 dset_iter = dset.make_initializable_iterator()
 dset_next = dset_iter.get_next()
@@ -108,8 +114,8 @@ print(generator.summary())
 
 learning_phase = tf.keras.backend.learning_phase()
 
-# discriminator.load_weights(os.path.join('/output', 'discriminator.h5'))
-# generator.load_weights(os.path.join('/output', 'generator.h5'))
+discriminator.load_weights(os.path.join('/output', 'discriminator.h5'))
+generator.load_weights(os.path.join('/output', 'generator.h5'))
 
 
 for e in range(n_epochs):

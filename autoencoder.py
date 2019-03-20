@@ -11,8 +11,6 @@ image_size = 256
 
 def create_model(inputs):
 
-	nf=16
-
 	x = conv_block(inputs, 16, 3, strides=1, n_dims=2, use_leaky_relu=False, has_norm_layer=False)
 	x = conv_block(x, 16, 3, strides=2, n_dims=2, use_leaky_relu=False, use_instance_norm=False)
 
@@ -22,10 +20,10 @@ def create_model(inputs):
 	x = conv_block(x, 64, 3, strides=1, n_dims=2, use_leaky_relu=False, use_instance_norm=False)
 	x = conv_block(x, 64, 3, strides=2, n_dims=2, use_leaky_relu=False, use_instance_norm=False)
 
-	x = conv_block(x, 128, 3, strides=1, n_dims=2, use_leaky_relu=False, use_instance_norm=False)
-	x = conv_block(x, 128, 3, strides=2, n_dims=2, use_leaky_relu=False, use_instance_norm=False)
+	# x = conv_block(x, 128, 3, strides=1, n_dims=2, use_leaky_relu=False, use_instance_norm=False)
+	# x = conv_block(x, 128, 3, strides=2, n_dims=2, use_leaky_relu=False, use_instance_norm=False)
 
-	x = up_block(x, 64, 3, n_dims=2, use_instance_norm=False)
+	# x = up_block(x, 64, 3, n_dims=2, use_instance_norm=False)
 	x = up_block(x, 32, 3, n_dims=2, use_instance_norm=False)
 	x = up_block(x, 16, 3, n_dims=2, use_instance_norm=False)
 	x = up_block(x, 8, 3, n_dims=2, use_instance_norm=False)
